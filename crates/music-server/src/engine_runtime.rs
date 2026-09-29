@@ -33,7 +33,9 @@ pub const CUDA13_LIBRARIES: [&str; 2] = ["cublas64_13.dll", "cublasLt64_13.dll"]
 pub const CUDA12_LIBRARIES: [&str; 2] = ["cublas64_12.dll", "cublasLt64_12.dll"];
 
 /// The Visual C++ runtime the engine and ggml are compiled against, by the
-/// names in their import tables.
+/// names in their import tables. Windows only, for the reason
+/// `vc_runtime_missing` gives.
+#[cfg(windows)]
 pub const VC_RUNTIME_LIBRARIES: [&str; 4] =
     ["vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "vcomp140.dll"];
 
@@ -123,12 +125,23 @@ impl EngineRuntime {
     /// The Visual C++ runtime ships inside the engine bundle, app-local as
     /// Microsoft permits, so the studio never installs anything into the
     /// system. A machine that has it on its search path is fine either way.
+    ///
+    /// This is a Windows requirement only. Off Windows the engine is linked
+    /// against the platform's own C++ runtime (libstdc++ and libgcc), so there
+    /// is nothing to ship beside it and nothing to ask for: reporting the four
+    /// DLLs missing would refuse to start an engine that is perfectly complete.
+    #[cfg(windows)]
     pub fn vc_runtime_missing(&self) -> Vec<&'static str> {
         VC_RUNTIME_LIBRARIES
             .iter()
             .copied()
             .filter(|library| !self.downloader.root().join(library).is_file() && !is_on_the_search_path(library))
             .collect()
+    }
+
+    #[cfg(not(windows))]
+    pub fn vc_runtime_missing(&self) -> Vec<&'static str> {
+        Vec::new()
     }
 
     /// What is still missing, so a caller can report the size before starting.
