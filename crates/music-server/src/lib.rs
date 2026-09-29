@@ -501,6 +501,17 @@ impl EngineOptions {
     /// the only one, whatever happens to it. Auto goes CUDA, Vulkan, the
     /// processor: CUDA when one of its builds runs this card and driver,
     /// Vulkan when there is a card, and the processor always, last.
+    ///
+    /// Auto is resolved here into a concrete device rather than left to the
+    /// engine. Leaving it unset removes `GGML_BACKEND`, and ggml then chooses a
+    /// device per stage: with both backends loaded it runs the LM and the VAE on
+    /// the card but the NAR on the processor, which is the slowest stage of the
+    /// three - measured at 131 ms a step on Vulkan against 52 s a step on the
+    /// processor. Naming the device once keeps every stage on it.
+    ///
+    /// This is what puts the GPU in the chain at all: the Vulkan entry is
+    /// conditional, so a machine whose card is not recognized would otherwise
+    /// fall straight to the processor even though its GPU works.
     fn device_chain(&self, failed: &[music_engine::yue_server::ComputeBackend]) -> Vec<music_engine::yue_server::ComputeBackend> {
         use music_engine::yue_server::ComputeBackend;
         if self.backend != ComputeBackend::Auto {
@@ -511,7 +522,7 @@ impl EngineOptions {
         if hardware.cuda.is_some() {
             chain.push(ComputeBackend::Cuda);
         }
-        if hardware.gpu_name.is_some() {
+        if self.uses_vulkan() {
             chain.push(ComputeBackend::Vulkan);
         }
         chain.retain(|device| !failed.contains(device));
