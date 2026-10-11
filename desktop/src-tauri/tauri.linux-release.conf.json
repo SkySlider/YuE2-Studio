@@ -13,6 +13,9 @@
     "linux": {
       "deb": {
         "depends": ["libvulkan1"]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
       }
     }
   }

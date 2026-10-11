@@ -12,7 +12,8 @@ if [ "${1:-}" = "--inside" ]; then
   apt-get update -q >/dev/null
   apt-get install -y -q --no-install-recommends build-essential pkg-config cmake ninja-build nasm autoconf automake libtool \
     curl ca-certificates git unzip xz-utils libssl-dev libasound2-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
-    librsvg2-dev patchelf file libfuse2 libvulkan-dev >/dev/null
+    librsvg2-dev patchelf file libfuse2 libvulkan-dev \
+    gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav >/dev/null
   if [ ! -x /cache/node/bin/node ]; then
     echo "[..] node 22"
     v=$(curl -s https://nodejs.org/dist/latest-v22.x/ | grep -o 'node-v22[0-9.]*-linux-x64.tar.xz' | head -1)
@@ -43,9 +44,23 @@ if [ "${1:-}" = "--inside" ]; then
   # the engine answers --help with its usage and a non-zero code
   "$engine" --help > /tmp/engine-help.txt 2>&1 || true
   grep -q 'Usage' /tmp/engine-help.txt || { echo "[ERROR] the engine does not start"; head -5 /tmp/engine-help.txt; exit 1; }
+  appimage="$(find /cache/target/release/bundle/appimage -name '*.AppImage' | head -n 1)"
+  # The AppImage carries its own WebKitGTK, and WebKit's GStreamer backend insists on
+  # an audio sink: with no plugins inside the AppImage its RELEASE_ASSERT(audioSink)
+  # aborts the web content process, and the first sound the UI makes (the waveform
+  # player, when a WAV is uploaded for a cover) leaves the window blank. Unpack the
+  # built AppImage and prove the sink's plugin travelled with it.
+  # APPIMAGE_EXTRACT_AND_RUN is exported above for the build itself, so drop it here
+  # or the runtime would start the studio instead of unpacking it.
+  ( cd /tmp && rm -rf squashfs-root \
+    && env -u APPIMAGE_EXTRACT_AND_RUN "$appimage" --appimage-extract 'usr/lib/gstreamer-1.0/*' >/dev/null )
+  if ! find /tmp/squashfs-root -name 'libgstautodetect.so' -print -quit 2>/dev/null | grep -q .; then
+    echo "[ERROR] the AppImage carries no GStreamer plugins, so playing audio would blank the window"
+    exit 1
+  fi
   version="$(node -p "require('./desktop/src-tauri/tauri.conf.json').version")"
   cp "$(find /cache/target/release/bundle/deb -name '*.deb' | head -n 1)" "/out/YuE2-Studio-${version}-linux-amd64.deb"
-  cp "$(find /cache/target/release/bundle/appimage -name '*.AppImage' | head -n 1)" "/out/YuE2-Studio-${version}-linux-x86_64.AppImage"
+  cp "$appimage" "/out/YuE2-Studio-${version}-linux-x86_64.AppImage"
   ls -la /out/*.deb /out/*.AppImage
   echo "[OK] YuE2-Studio ${version} for Linux"
   exit 0
